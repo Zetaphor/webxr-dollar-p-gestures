@@ -1,0 +1,448 @@
+<!DOCTYPE HTML>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+	<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+	<title>$P Recognizer</title>
+	<link href="styles.css" rel="stylesheet" type="text/css" />
+	<!--[if IE]><script src="excanvas.js"></script><![endif]-->
+	<script type="text/javascript" src="canvas.text.js"></script>
+	<script type="text/javascript" src="./faces/gentilis-normal-normal.js"></script>
+	<script type="text/javascript" src="./jquery-1.7.2.min.js"></script>
+	<script type="text/javascript" src="../pdollar.js"></script>
+	<script type="text/javascript"><!--
+		//
+		// Startup
+		//
+		var _isDown, _points, _strokeID, _r, _g, _rc; // global variables
+		function onLoadEvent()
+		{
+			_points = new Array(); // point array for current stroke
+			_strokeID = 0;
+			_r = new PDollarRecognizer();
+
+			var canvas = document.getElementById('myCanvas');
+			_g = canvas.getContext('2d');
+			_g.lineWidth = 3;
+			_g.font = "16px Gentilis";
+			_rc = getCanvasRect(canvas); // canvas rect on page
+			_g.fillStyle = "rgb(255,255,136)";
+			_g.fillRect(0, 0, _rc.width, 20);
+
+			_isDown = false;
+		}
+		function getCanvasRect(canvas)
+		{
+			var w = canvas.width;
+			var h = canvas.height;
+
+			var cx = canvas.offsetLeft;
+			var cy = canvas.offsetTop;
+			while (canvas.offsetParent != null)
+			{
+				canvas = canvas.offsetParent;
+				cx += canvas.offsetLeft;
+				cy += canvas.offsetTop;
+			}
+			return {x: cx, y: cy, width: w, height: h};
+		}
+		function getScrollX()
+		{
+			var scrollX = $(window).scrollLeft();
+			return scrollX;
+		}
+		function getScrollY()
+		{
+			var scrollY = $(window).scrollTop();
+			return scrollY;
+		}
+		//
+		// Mouse Events
+		//
+		function mouseDownEvent(x, y, button)
+		{
+			document.onselectstart = function() { return false; } // disable drag-select
+			document.onmousedown = function() { return false; } // disable drag-select
+			if (button <= 1)
+			{
+				_isDown = true;
+				x -= _rc.x - getScrollX();
+				y -= _rc.y - getScrollY();
+				if (_strokeID == 0) // starting a new gesture
+				{
+					_points.length = 0;
+					_g.clearRect(0, 0, _rc.width, _rc.height);
+				}
+				_points[_points.length] = new Point(x, y, ++_strokeID);
+				drawText("Recording stroke #" + _strokeID + "...");
+				var clr = "rgb(" + rand(0,200) + "," + rand(0,200) + "," + rand(0,200) + ")";
+				_g.strokeStyle = clr;
+				_g.fillStyle = clr;
+				_g.fillRect(x - 4, y - 3, 9, 9);
+			}
+			else if (button == 2)
+			{
+				drawText("Recognizing gesture...");
+			}
+		}
+		function mouseMoveEvent(x, y, button)
+		{
+			if (_isDown)
+			{
+				x -= _rc.x - getScrollX();
+				y -= _rc.y - getScrollY();
+				_points[_points.length] = new Point(x, y, _strokeID); // append
+				drawConnectedPoint(_points.length - 2, _points.length - 1);
+			}
+		}
+		function mouseUpEvent(x, y, button)
+		{
+			document.onselectstart = function() { return true; } // enable drag-select
+			document.onmousedown = function() { return true; } // enable drag-select
+			if (button <= 1)
+			{
+				if (_isDown)
+				{
+					_isDown = false;
+					drawText("Stroke #" + _strokeID + " recorded.");
+				}
+			}
+			else if (button == 2) // segmentation with right-click
+			{
+				if (_points.length >= 10)
+				{
+					var result = _r.Recognize(_points);
+					console.log(_points);
+					drawText("Result: " + result.Name + " (" + round(result.Score,2) + ") in " + result.Time + " ms.");
+				}
+				else
+				{
+					drawText("Too little input made. Please try again.");
+				}
+				_strokeID = 0; // signal to begin new gesture on next mouse-down
+			}
+		}
+		function drawConnectedPoint(from, to)
+		{
+			_g.beginPath();
+			_g.moveTo(_points[from].X, _points[from].Y);
+			_g.lineTo(_points[to].X, _points[to].Y);
+			_g.closePath();
+			_g.stroke();
+		}
+		function drawText(str)
+		{
+			_g.fillStyle = "rgb(255,255,136)";
+			_g.fillRect(0, 0, _rc.width, 20);
+			_g.fillStyle = "rgb(0,0,255)";
+			_g.fillText(str, 1, 14);
+		}
+		function rand(low, high)
+		{
+			return Math.floor((high - low + 1) * Math.random()) + low;
+		}
+		function round(n, d) // round 'n' to 'd' decimals
+		{
+			d = Math.pow(10, d);
+			return Math.round(n * d) / d;
+		}
+		//
+		// Multistroke Adding and Clearing
+		//
+		function onClickAddExisting()
+		{
+			if (_points.length >= 10)
+			{
+				var pointclouds = document.getElementById('pointclouds');
+				var name = pointclouds[pointclouds.selectedIndex].value;
+				var num = _r.AddGesture(name, _points);
+				drawText("\"" + name + "\" added. No. of \"" + name + "\" defined: " + num + ".");
+				_strokeID = 0; // signal to begin new gesture on next mouse-down
+			}
+		}
+		function onClickAddCustom()
+		{
+			var name = document.getElementById('custom').value;
+			if (_points.length >= 10 && name.length > 0)
+			{
+				var num = _r.AddGesture(name, _points);
+				drawText("\"" + name + "\" added. No. of \"" + name + "\" defined: " + num + ".");
+				_strokeID = 0; // signal to begin new gesture on next mouse-down
+			}
+		}
+		function onClickCustom()
+		{
+			document.getElementById('custom').select();
+		}
+		function onClickDelete()
+		{
+			var num = _r.DeleteUserGestures(); // deletes any user-defined templates
+			alert("All user-defined gestures have been deleted. Only the 1 predefined gesture remains for each of the " + num + " types.");
+			_strokeID = 0; // signal to begin new gesture on next mouse-down
+		}
+		function onClickClearStrokes()
+		{
+			_points.length = 0;
+			_strokeID = 0;
+			_g.clearRect(0, 0, _rc.width, _rc.height);
+			drawText("Canvas cleared.");
+		}
+	// -->
+	</script>
+</head>
+<body onload="onLoadEvent()">
+	<p align="center">
+		Recognizers:
+		<a href="http://depts.washington.edu/acelab/proj/dollar/index.html">$1</a>
+		&nbsp;&bull;&nbsp;
+		<a href="http://depts.washington.edu/acelab/proj/dollar/ndollar.html">$N</a>
+		&nbsp;&bull;&nbsp;
+		<a href="http://depts.washington.edu/acelab/proj/dollar/pdollar.html"><b style="background-color:navy;color:white;">$P</b></a>
+		&nbsp;&bull;&nbsp;
+		<a href="http://depts.washington.edu/acelab/proj/dollar/pdollarplus.html">$P+</a>
+		&nbsp;&bull;&nbsp;
+		<a href="http://depts.washington.edu/acelab/proj/dollar/qdollar.html">$Q</a>
+		&nbsp;&bull;&nbsp;
+		<a href="http://depts.washington.edu/acelab/proj/dollar/impact.html">Impact of $-family</a>
+	<br/>
+		Tools:
+		<a href="http://depts.washington.edu/acelab/proj/dollar/gecko.html">GECKo</a>
+		&nbsp;&bull;&nbsp;
+		<a href="http://depts.washington.edu/acelab/proj/dollar/great.html">GREAT</a>
+		&nbsp;&bull;&nbsp;
+		<a href="http://depts.washington.edu/acelab/proj/dollar/ghost.html">GHoST</a>
+		&nbsp;&bull;&nbsp;
+		<a href="http://depts.washington.edu/acelab/proj/dollar/agate.html">AGATe</a>
+	</p>
+
+	<div id="Mast">
+		<a href="$P.png"><img style="float:right;margin-top:0em" src="$P.png" border="0" width="280" /></a>
+		<p id="heading">$P Point-Cloud Recognizer</p>
+		<p>
+		<a href="http://www.eed.usv.ro/~vatavu/">Radu-Daniel Vatavu</a>, University Stefan cel Mare of Suceava<br/>
+		<a href="http://lisa-anthony.com/">Lisa Anthony</a>, University of Maryland&mdash;Baltimore County<sup>&dagger;</sup><br/>
+		<a href="http://faculty.washington.edu/wobbrock/">Jacob O. Wobbrock</a>, University of Washington <a style="font-size:8pt" href="mailto:Jacob O. Wobbrock &lt;wobbrock@uw.edu&gt;?subject=From the $N recognizer page">[contact]</a>
+		</p>
+		<p style="font-size:8pt"><sup>&dagger;</sup>Currently at the University of Florida</p>
+	</div>
+	<div id="Content">
+		<p class="subhead">Download</p>
+		<p>$P source code: <a href="pdollar.js">JavaScript</a>, <a href="pdollar.zip">C#</a><br/>
+		   Pseudocode: <a href="pdollar.pdf">$P</a>, <a href="SmartTouch $P.pdf">SmartTouch $P</a><br/>
+		   Multistroke gesture logs: <a href="mmg.zip">XML</a><br/>
+		   Paper: <a href="http://faculty.washington.edu/wobbrock/pubs/icmi-12.pdf">PDF</a>
+		</p>
+		<p>This software is distributed under the <a href="http://en.wikipedia.org/wiki/BSD_licenses#3-clause_license_.28.22Revised_BSD_License.22.2C_.22New_BSD_License.22.2C_or_.22Modified_BSD_License.22.29">New BSD License</a> agreement.</p>
+
+
+		<p class="subhead">About</p>
+		<p>
+			The <b>$P Point-Cloud Recognizer</b> is a 2-D stroke-gesture recognizer designed for rapid prototyping of gesture-based
+			user interfaces. $P is the first point-cloud matcher within the $-family of
+			recognizers, which includes <a href="index.html">$1 for unistrokes</a> and <a href="ndollar.html">$N for multistrokes</a>.
+			Although about half of $P's code is from $1, unlike both $1 and $N, $P does not represent gestures as ordered
+			points (i.e., strokes), but as unordered point-clouds. By representing gestures as point-clouds,
+			$P can handle both unistrokes and multistrokes equivalently, and without the combinatoric overhead of $N, as stroke
+			number, order, and direction are all ignored. When comparing two point-clouds, $P finds a solution to the classic
+			<a href="http://en.wikipedia.org/wiki/Assignment_problem">assignment problem</a> between two bipartite
+			graphs using an approximation of the <a href="http://en.wikipedia.org/wiki/Hungarian_algorithm">Hungarian algorithm</a>.
+			Superseding $P is <a href="pdollarplus.html">$P+</a>, which is more accurate and optimized for people with low vision; and
+			<a href="qdollar.html">$Q</a>, which is a super-quick recognizer optimized for low-power mobiles and wearables, achieving
+			a whopping 142&times; speedup with slightly improved accuracy.
+		</p>
+		<p>The $-family recognizers have been built into numerous projects and even industry prototypes,
+		   and have had many follow-ons by others. <a href="impact.html">Read about the $-family's impact.</a>
+		</p>
+
+		<p class="subhead">Video</p>
+		<p>
+			<iframe width="640" height="360" src="https://www.youtube.com/embed/VI7J4CftGNg" frameborder="0" allowfullscreen></iframe>
+		</p>
+
+		<p class="subhead">Demo</p>
+		<p>
+			In the demo below, only one point-cloud template is loaded for each of the 16 gesture types. You can add additional
+			templates as you wish, and even define your own custom gesture templates.
+			<!-- Gesture image and canvas -->
+			<table border="0" cellspacing="10">
+				<tr>
+					<td valign="top">
+						<img src="multistrokes.gif"><br/>
+					</td>
+					<td valign="top" align="left">
+						<table border="0" cellpadding="0" cellspacing="0">
+							<tr>
+								<td valign="bottom">
+									<p style="font-size:10pt"><i>Make strokes on this canvas.
+									<b><u>Right-click</u> the canvas to recognize.</b>
+									If a misrecognition occurs, add the mis- recognized gesture
+									as an example of the intended gesture.</i>
+									</p>
+								</td>
+								<td valign="middle"><input type="button" style="width:64px;float:right" value=" Clear  " onclick="onClickClearStrokes()"></td>
+							</tr>
+						</table>
+
+						<canvas id="myCanvas" width="420" height="400" style="background-color:#dddddd"
+								onmousedown="mouseDownEvent(event.clientX, event.clientY, event.button)"
+								onmousemove="mouseMoveEvent(event.clientX, event.clientY, event.button)"
+								onmouseup="mouseUpEvent(event.clientX, event.clientY, event.button)"
+								oncontextmenu="return false;">
+							<span style="background-color:#ffff88;">The &lt;canvas&gt; element is not supported by this browser.</span>
+						</canvas>
+
+						<!--<p align="center" style="margin-top:10em;margin-bottom:10em"><i>Canvas coming soon...</i></p>-->
+
+						<!-- Editing area below stroking canvas area -->
+						<table border="0" width="420" style="font-size:10pt">
+							<tr>
+								<td valign="top" align="left">Add as example of existing type:</td>
+								<td valign="top" align="right">
+									<select id="pointclouds" style="width:136px" onkeypress="if (event.keyCode == 13) onClickAddExisting()">
+										<option selected value="T">T</option>
+										<option value="N">N</option>
+										<option value="D">D</option>
+										<option value="P">P</option>
+										<option value="X">X</option>
+										<option value="H">H</option>
+										<option value="I">I</option>
+										<option value="exclamation">exclamation</option>
+										<option value="line">line</option>
+										<option value="five-point star">five-point star</option>
+										<option value="null">null</option>
+										<option value="arrowhead">arrowhead</option>
+										<option value="pitchfork">pitchfork</option>
+										<option value="six-point star">six-point star</option>
+										<option value="asterisk">asterisk</option>
+										<option value="half-note">half-note</option>
+									</select>
+								</td>
+								<td valign="top" align="right"><input type="button" style="width:64px" value="  Add   " onclick="onClickAddExisting()" /></td>
+							</tr>
+							<tr>
+								<td valign="top" align="left">Add as example of custom type:</td>
+								<td valign="top" align="right"><input type="text" id="custom" style="width:130px" value="Type name here..." onclick="onClickCustom()" onkeypress="if (event.keyCode == 13) onClickAddCustom()" /></td>
+								<td valign="top" align="right"><input type="button" style="width:64px" value="  Add   " onclick="onClickAddCustom()" /></td>
+							</tr>
+							<tr>
+								<td valign="top" align="left">Delete all user-defined gestures:</td>
+								<td valign="top" align="right">&nbsp;</td>
+								<td valign="top" align="right"><input type="button" style="width:64px" value="Delete" onclick="onClickDelete()" /></td>
+							</tr>
+						</table>
+						<!-- End of editing area below stroking canvas area -->
+					</td>
+				</tr>
+			</table>
+		</p>
+
+
+		<p class="subhead">Our Gesture Software Projects</p>
+		<p>
+			<ul>
+				<li><a href="http://depts.washington.edu/acelab/proj/dollar/qdollar.html">$Q</a>: Super-quick multistroke recognizer - optimized for low-power mobiles and wearables</li>
+				<li><a href="http://depts.washington.edu/acelab/proj/dollar/pdollarplus.html">$P+</a>: Point-cloud multistroke recognizer - optimized for people with low vision</li>
+				<li style="background-color:lightyellow"><a href="http://depts.washington.edu/acelab/proj/dollar/pdollar.html">$P</a>: Point-cloud multistroke recognizer - for recognizing multistroke gestures as point-clouds</li>
+				<li><a href="http://depts.washington.edu/acelab/proj/dollar/ndollar.html">$N</a>: Multistroke recognizer - for recognizing simple multistroke gestures</li>
+				<li><a href="http://depts.washington.edu/acelab/proj/dollar/index.html">$1</a>: Unistroke recognizer - for recognizing unistroke gestures</li>
+			</ul>
+			<ul>
+				<li><a href="http://depts.washington.edu/acelab/proj/dollar/agate.html">AGATe</a>: AGreement Analysis Toolkit - for calculating agreement in gesture-elicitation studies</li>
+				<li><a href="http://depts.washington.edu/acelab/proj/dollar/ghost.html">GHoST</a>: Gesture HeatmapS Toolkit - for visualizing variation in gesture articulation</li>
+				<li><a href="http://depts.washington.edu/acelab/proj/dollar/great.html">GREAT</a>: Gesture RElative Accuracy Toolkit - for measuring variation in gesture articulation</li>
+				<li><a href="http://depts.washington.edu/acelab/proj/dollar/gecko.html">GECKo</a>: GEsture Clustering toolKit - for clustering gestures and calculating agreement</li>
+			</ul>
+		</p>
+
+
+		<p class="subhead">Our Gesture Publications</p>
+		<ol>
+		<li style="font-size:10pt;">
+			Vatavu, R.-D., Anthony, L. and Wobbrock, J.O. (2018).
+			<a href="http://faculty.washington.edu/wobbrock/pubs/mobilehci-18.pdf">$Q: A super-quick, articulation-invariant stroke-gesture recognizer for low-resource devices.</a>
+			Proceedings of the ACM Conference on Human-Computer Interaction with Mobile Devices and Services (MobileHCI '18).
+			Barcelona, Spain (September 3-6, 2018).
+			New York: ACM Press. Article No. 23.
+		</li>
+		<li style="font-size:10pt;">
+			Vatavu, R.-D. (2017).
+			<a href="https://depts.washington.edu/acelab/proj/dollar/chi-17.pdf">Improving gesture recognition accuracy on touch screens for users with low vision.</a>
+			Proceedings of the ACM Conference on Human Factors in Computing Systems (CHI '17).
+			Denver, Colorado (May 6-11, 2017).
+			New York: ACM Press, pp. 4667-4679.
+		</li>
+		<li style="font-size:10pt;">
+			Vatavu, R.-D. and Wobbrock, J.O. (2016).
+			<a href="http://faculty.washington.edu/wobbrock/pubs/chi-16.02.pdf">Between-subjects elicitation studies: Formalization and tool support.</a>
+			Proceedings of the ACM Conference on Human Factors in Computing Systems (CHI '16).
+			San Jose, California (May 7-12, 2016).
+			New York: ACM Press, pp. 3390-3402.
+		</li>
+		<li style="font-size:10pt;">
+			Vatavu, R.-D. and Wobbrock, J.O. (2015).
+			<a href="http://faculty.washington.edu/wobbrock/pubs/chi-15.01.pdf">Formalizing agreement analysis for elicitation studies: New measures, significance test, and toolkit.</a>
+			Proceedings of the ACM Conference on Human Factors in Computing Systems (CHI '15).
+			Seoul, Korea (April 18-23, 2015).
+			New York: ACM Press, pp. 1325-1334.
+		</li>
+		<li style="font-size:10pt;">
+			Vatavu, R.-D., Anthony, L. and Wobbrock, J.O. (2014).
+			<a href="http://faculty.washington.edu/wobbrock/pubs/icmi-14.01.pdf">Gesture heatmaps: Understanding gesture performance with colorful visualizations.</a>
+			Proceedings of the ACM International Conference on Multimodal Interfaces (ICMI '14).
+			Istanbul, Turkey (November 12-16, 2014).
+			New York: ACM Press, pp. 172-179.
+		</li>
+		<li style="font-size:10pt;">
+			Vatavu, R.-D., Anthony, L. and Wobbrock, J.O. (2013).
+			<a href="http://faculty.washington.edu/wobbrock/pubs/icmi-13.pdf">Relative accuracy measures for stroke gestures.</a>
+			Proceedings of the ACM International Conference on Multimodal Interfaces (ICMI '13).
+			Sydney, Australia (December 9-13, 2013).
+			New York: ACM Press, pp. 279-286.
+		</li>
+		<li style="font-size:10pt;">
+			Anthony, L., Vatavu, R.-D. and Wobbrock, J.O. (2013).
+			<a href="http://faculty.washington.edu/wobbrock/pubs/gi-13.02.pdf">Understanding the consistency of users' pen and finger stroke gesture articulation.</a>
+			Proceedings of Graphics Interface (GI '13).
+			Regina, Saskatchewan (May 29-31, 2013).
+			Toronto, Ontario: Canadian Information Processing Society, pp. 87-94.
+		</li>
+		<li style="font-size:10pt;background-color:lightyellow;">
+			Vatavu, R.-D., Anthony, L. and Wobbrock, J.O. (2012).
+			<a href="http://faculty.washington.edu/wobbrock/pubs/icmi-12.pdf">Gestures as point clouds: A $P recognizer for user interface prototypes.</a>
+			Proceedings of the ACM International Conference on Multimodal Interfaces (ICMI '12).
+			Santa Monica, California (October 22-26, 2012).
+			New York: ACM Press, pp. 273-280.
+		</li>
+		<li style="font-size:10pt;">
+			Anthony, L. and Wobbrock, J.O. (2012).
+			<a href="http://faculty.washington.edu/wobbrock/pubs/gi-12.03.pdf">$N-Protractor: A fast and accurate multistroke recognizer.</a>
+			Proceedings of Graphics Interface (GI '12).
+			Toronto, Ontario (May 28-30, 2012).
+			Toronto, Ontario: Canadian Information Processing Society, pp. 117-120.
+		</li>
+		<li style="font-size:10pt;">
+			Anthony, L. and Wobbrock, J.O. (2010).
+			<a href="http://faculty.washington.edu/wobbrock/pubs/gi-10.02.pdf">A lightweight multistroke recognizer for user interface prototypes.</a>
+			Proceedings of Graphics Interface (GI '10).
+			Ottawa, Ontario (May 31-June 2, 2010).
+			Toronto, Ontario: Canadian Information Processing Society, pp. 245-252.
+		</li>
+		<li style="font-size:10pt;">
+			Wobbrock, J.O., Wilson, A.D. and Li, Y. (2007).
+			<a href="http://faculty.washington.edu/wobbrock/pubs/uist-07.01.pdf">Gestures without libraries, toolkits or training: A $1 recognizer for user interface prototypes.</a>
+			Proceedings of the ACM Symposium on User Interface Software and Technology (UIST '07).
+			Newport, Rhode Island (October 7-10, 2007).
+			New York: ACM Press, pp. 159-168.
+		</li>
+		</ol>
+
+
+		<br/>
+		<p style="font-size:8pt;text-align:center">
+		Copyright &copy; 2012-2019 Jacob O. Wobbrock. All rights reserved. <br/>
+		Last updated June 30, 2019.
+		</p>
+		<br/>
+
+	</div>
+</body>
+</html>
